@@ -2,9 +2,9 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 import re
 from PIL import ImageTk, Image
-from ansi_ascii_art_generator.core import AsciiArtGenerator
-from ansi_ascii_art_generator.utils import image_to_html
-from ansi_ascii_art_generator.characters import CharacterSet
+from .core import AsciiArtGenerator
+from .utils import image_to_html
+from .characters import CharacterSet
 
 # Regular expressions for ANSI truecolor and ANSI 256-color sequences, and the reset code.
 ANSI_TRUECOLOR_RE = re.compile(r"\x1b\[38;2;(\d+);(\d+);(\d+)m")

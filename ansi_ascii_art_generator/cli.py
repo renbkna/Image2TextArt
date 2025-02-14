@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import colorama
 
 colorama.init()  # Initialize Colorama to enable ANSI escape sequence handling
