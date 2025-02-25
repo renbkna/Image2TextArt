@@ -2,21 +2,43 @@
 
 ## Overview
 
-The ANSI-ASCII Art Generator is a tool that converts images into ASCII representations using various character sets and color modes. It supports both command-line and graphical interfaces and provides multiple customization options.
+The ANSI-ASCII Art Generator is a powerful tool that transforms images into beautiful and highly detailed ASCII art. It supports multiple rendering modes, each optimized for maximum detail and precision. The tool features both a command-line interface and an enhanced graphical user interface with advanced customization options.
 
 ## Features
 
-- Convert images to ASCII art
-- Support for multiple color modes:
-  - Grayscale
-  - ANSI 256-color
-  - Truecolor
-  - HTML
-  - Unicode Braille
-- Adjustable output width
-- Character set presets
-- Edge detection and dithering options
-- GUI and CLI modes
+- **High-detail conversion** in all modes:
+  - **Grayscale**: Rich tonal variation with optimized character mapping
+  - **ANSI 256-color**: Detailed color representation with optimized palette
+  - **Truecolor**: Full 24-bit color with precise character selection
+  - **HTML**: Web-friendly colorized output with custom styling
+  - **Unicode Braille**: High resolution dot-pattern representation
+  
+- **Intelligent image processing**:
+  - Advanced detail enhancement with local contrast optimization
+  - High-quality dithering with mode-specific algorithms
+  - Sophisticated edge detection and enhancement
+  - Adaptive threshold calculation
+  - Dynamic character mapping based on visual density
+  
+- **Expanded character sets**:
+  - 13+ optimized character presets for different visual styles
+  - Dense gradient sets for smooth transitions
+  - Specialized sets for photos, line art, geometric patterns, and more
+  - Custom character set support
+  
+- **Enhanced GUI**:
+  - Auto-fit feature that adjusts to window size
+  - Image analysis with recommended settings
+  - Advanced display options with zoom controls
+  - Font size and family selection
+  - Custom background and foreground colors
+  
+- **Advanced customization**:
+  - Brightness, contrast, and saturation controls
+  - Gamma correction and detail level adjustment
+  - Blur and sharpen filters
+  - Aspect ratio fine-tuning
+  - Edge threshold control
 
 ## Installation
 
@@ -37,7 +59,7 @@ pip install -r requirements.txt
 
 ### Optional: Install in Editable Mode
 
-If you want to use convenient command-line entry points or make development easier, install the app in editable mode:
+For convenient command-line entry points:
 
 ```sh
 pip install -e .
@@ -59,41 +81,49 @@ python -m ansi_ascii_art_generator.cli /path/to/image.jpg
 
 #### Options
 
-| Option         | Short | Description                                                              |
-| -------------- | ----- | ------------------------------------------------------------------------ |
-| `--width`      | `-w`  | Set output width (default: 100)                                          |
-| `--color`      | `-c`  | Color mode: grayscale, ansi, truecolor, html, braille (default: braille) |
-| `--dither`     | `-d`  | Enable dithering                                                         |
-| `--edges`      | `-e`  | Enable edge detection                                                    |
-| `--preset`     | `-p`  | Choose character set preset                                              |
-| `--output`     | `-o`  | Save output to a file                                                    |
-| `--no-enhance` |       | Disable auto contrast enhancement                                        |
+| Option             | Short | Description                                              |
+| ------------------ | ----- | -------------------------------------------------------- |
+| `--width`          | `-w`  | Set output width (default: 100)                          |
+| `--color`          | `-c`  | Color mode: grayscale, ansi, truecolor, html, braille   |
+| `--dither`         | `-d`  | Enable dithering                                         |
+| `--edges`          | `-e`  | Enable edge detection                                    |
+| `--preset`         | `-p`  | Choose character set preset                              |
+| `--output`         | `-o`  | Save output to a file                                    |
+| `--no-enhance`     |       | Disable auto contrast enhancement                        |
+| `--edge-threshold` |       | Set edge detection threshold (0-255)                     |
+| `--invert`         |       | Invert image colors                                      |
+| `--aspect-ratio`   |       | Adjust aspect ratio correction                           |
+| `--blur`           |       | Apply blur (0.0-10.0)                                    |
+| `--sharpen`        |       | Apply sharpening (0.0-10.0)                             |
+| `--brightness`     |       | Adjust brightness (0.5-2.0)                              |
+| `--saturation`     |       | Adjust saturation (0.0-2.0)                              |
+| `--custom-chars`   |       | Specify custom character set                             |
 
 #### Example Usage
 
-Convert an image to grayscale ASCII art:
+Convert an image to grayscale ASCII art with enhanced detail:
 
 ```sh
-python -m ansi_ascii_art_generator.cli /path/to/image.jpg -c grayscale
+python -m ansi_ascii_art_generator.cli /path/to/image.jpg -c grayscale --sharpen 2.0 --contrast 1.2
 ```
 
-Convert an image using ANSI color mode with 120-character width:
+Create Braille art with dithering:
 
 ```sh
-python -m ansi_ascii_art_generator.cli /path/to/image.jpg -c ansi -w 120
+python -m ansi_ascii_art_generator.cli /path/to/image.jpg -c braille -d -w 120
 ```
 
-Save the output to a file:
+Use edge detection with custom threshold:
 
 ```sh
-python -m ansi_ascii_art_generator.cli /path/to/image.jpg -o output.txt
+python -m ansi_ascii_art_generator.cli /path/to/image.jpg -e --edge-threshold 50
 ```
 
 ### GUI Mode
 
 #### Launch GUI
 
-To run the graphical user interface, execute:
+To run the enhanced graphical user interface, execute:
 
 ```sh
 python -m ansi_ascii_art_generator.gui
@@ -104,6 +134,37 @@ If you've installed in editable mode, you can also launch it using:
 ```sh
 asciigen-gui
 ```
+
+#### GUI Features
+
+The GUI provides access to all features through an intuitive interface:
+
+- **Basic tab**: Width, color mode, character set, aspect ratio, and basic toggles
+- **Advanced tab**: Fine-tuning controls for edge threshold, blur, sharpen, brightness, saturation, contrast, detail level, gamma, and custom character sets
+- **Display tab**: Font controls, auto-fit toggle, and zoom buttons
+- **Color controls**: Custom background and foreground colors
+- **Recommended settings**: Automatic analysis of the image to suggest optimal settings
+
+## Character Sets
+
+The generator includes numerous character sets optimized for different purposes:
+
+- `block`: Block characters for solid shapes
+- `dense`: Smooth gradient transitions
+- `lineart`: Line-drawing characters for diagrams
+- `classic`: Traditional ASCII art characters
+- `unicode`: Unicode block characters
+- `detailed`: Extensive gradient for photographic detail
+- `binary`: Simple high-contrast (just 0 and 1)
+- `minimal`: Clean, simple gradient
+- `circles`: Circle-based characters for organic shapes
+- `shading`: Pure shading blocks
+- `geometric`: Geometric shapes
+- `dots`: Braille-like patterns
+- `contrast`: High contrast (space and full block)
+- `photo`: Optimized for photographs
+- `pixel`: Retro-style pixelated look
+- `ultra`: Maximum detail character set
 
 ## Development
 
@@ -119,21 +180,18 @@ ansi_ascii_art_generator/
 ├── utils.py
 .gitignore
 LICENSE
-readme.md
+README.md
 requirements.txt
 setup.py
 ```
 
-### Running Tests
+### Key Components
 
-Tests are not included yet. To add test cases, consider using a framework like `pytest`.
-
-## Contribution
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes and commit with a descriptive message
-4. Push to your fork and submit a pull request
+- `core.py`: The heart of the conversion engine with image processing
+- `characters.py`: Character set definitions and density mapping
+- `gui.py`: Enhanced graphical interface
+- `cli.py`: Command-line interface
+- `utils.py`: Helper functions and HTML output
 
 ## License
 
