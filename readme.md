@@ -203,7 +203,7 @@ The generator includes numerous character sets optimized for different purposes:
 
 The project also includes an Electron-based GUI for a native desktop experience:
 
-![Image2TextArt Screenshot](screenshot.png)
+![Image2TextArt Screenshot](public/image.png)
 
 ### Features of the Electron GUI
 
