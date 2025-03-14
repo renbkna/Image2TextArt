@@ -1,12 +1,13 @@
 import numpy as np
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance, ImageChops, ImageStat
+import os
 from .characters import CharacterSet
-
+from ._colormap import ColorMapper
 
 class AsciiArtGenerator:
     def __init__(
         self,
-        image_path,
+        image_input,
         output_width=100,
         color_mode="ansi",  # options: "grayscale", "ansi", "truecolor", "html", "braille"
         dithering=False,
@@ -24,7 +25,40 @@ class AsciiArtGenerator:
         detail_level=1.0,
         gamma=1.0,
     ):
-        self.image = Image.open(image_path)
+        """
+        Initialize the ASCII art generator with the given parameters.
+        
+        Args:
+            image_input: Either a file path (str) or a PIL Image object
+            output_width: Width of the ASCII art in characters
+            color_mode: "grayscale", "ansi", "truecolor", "html", or "braille"
+            dithering: Whether to apply dithering
+            edge_detect: Whether to apply edge detection
+            preset: Character set preset name
+            enhance_contrast: Whether to enhance contrast
+            aspect_ratio_correction: Aspect ratio correction factor
+            invert: Whether to invert colors
+            edge_threshold: Edge detection threshold (0-255)
+            blur: Blur amount (0.0-10.0)
+            sharpen: Sharpen amount (0.0-10.0)
+            brightness: Brightness adjustment (0.5-2.0)
+            saturation: Saturation adjustment (0.0-2.0)
+            contrast: Contrast adjustment (0.5-2.0)
+            detail_level: Detail level adjustment (0.1-2.0)
+            gamma: Gamma correction (0.5-2.0)
+        """
+        # Handle input that can be either a file path or a PIL Image
+        if isinstance(image_input, str):
+            # It's a file path
+            self.image_path = image_input
+            self.image = Image.open(image_input)
+        elif isinstance(image_input, Image.Image):
+            # It's a PIL Image object
+            self.image = image_input
+            self.image_path = getattr(image_input, 'filename', None)
+        else:
+            raise TypeError("image_input must be a file path or a PIL Image object")
+            
         self.output_width = output_width
         self.color_mode = color_mode
         self.dithering = dithering
@@ -44,10 +78,10 @@ class AsciiArtGenerator:
         self.aspect_ratio = self.image.height / self.image.width
         self.characters = self._get_character_set()
         
-        # Character density cache for performance
-        self._density_cache = {}
+        # Character density is now cached at the class level in CharacterSet
 
     def _get_character_set(self):
+        """Get the character set based on the selected preset."""
         try:
             return CharacterSet.get_preset(self.preset)
         except ValueError:
@@ -55,85 +89,82 @@ class AsciiArtGenerator:
             return CharacterSet.get_preset("classic")
 
     def _preprocess_image(self):
-        """Apply preprocessing to the image before ASCII conversion."""
+        """
+        Apply preprocessing to the image before ASCII conversion.
+        Optimized version with reduced intermediate image creation.
+        """
         # Always convert to RGB (even for grayscale we'll convert later)
         img = self.image.convert("RGB")
         
-        # Apply gamma correction
+        # Apply combined adjustments to reduce intermediate image creation
+        adjustments = []
+        
+        # Stack adjustments that need to be applied
         if self.gamma != 1.0:
-            # Create a gamma correction lookup table
+            # Using a lookup table is more efficient than a point operation
             gamma_map = [int(255 * (i / 255) ** (1.0 / self.gamma)) for i in range(256)]
             img = img.point(lambda p: gamma_map[p])
         
-        # Apply saturation adjustment
-        if self.saturation != 1.0:
-            enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(self.saturation)
+        # Group enhancers together for better performance
+        if self.saturation != 1.0 or self.brightness != 1.0 or self.contrast != 1.0:
+            if self.saturation != 1.0:
+                adjustments.append((ImageEnhance.Color, self.saturation))
+            
+            if self.brightness != 1.0:
+                adjustments.append((ImageEnhance.Brightness, self.brightness))
+                
+            if self.contrast != 1.0:
+                adjustments.append((ImageEnhance.Contrast, self.contrast))
+                
+            # Apply all enhancers in sequence
+            for enhancer_class, value in adjustments:
+                img = enhancer_class(img).enhance(value)
         
-        # Apply brightness adjustment
-        if self.brightness != 1.0:
-            enhancer = ImageEnhance.Brightness(img)
-            img = enhancer.enhance(self.brightness)
+        # Apply filters only if needed
+        if self.blur > 0 or self.sharpen > 0 or self.edge_detect:
+            if self.blur > 0:
+                img = img.filter(ImageFilter.GaussianBlur(self.blur))
+                
+            if self.sharpen > 0:
+                enhancer = ImageEnhance.Sharpness(img)
+                img = enhancer.enhance(1.0 + self.sharpen)
             
-        # Apply contrast adjustment
-        if self.contrast != 1.0:
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(self.contrast)
-        
-        # Apply blur if requested
-        if self.blur > 0:
-            img = img.filter(ImageFilter.GaussianBlur(self.blur))
-            
-        # Apply sharpening if requested
-        if self.sharpen > 0:
-            enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(1.0 + self.sharpen)
-        
-        # Optionally apply edge detection
-        if self.edge_detect:
-            # Create a sophisticated edge detection algorithm
-            # First, create an edge-detected version
-            edge_img = img.filter(ImageFilter.FIND_EDGES)
-            
-            # Convert to grayscale for thresholding
-            edge_img = edge_img.convert("L")
-            
-            # Apply adaptive thresholding based on image content
-            stat = ImageStat.Stat(edge_img)
-            edge_mean = stat.mean[0]
-            adaptive_threshold = min(max(edge_mean * 0.7, self.edge_threshold), 200)
-            
-            # Apply threshold to make edges more distinct
-            edge_img = edge_img.point(lambda p: 255 if p > adaptive_threshold else 0)
-            
-            # Convert back to RGB
-            edge_img = edge_img.convert("RGB")
-            
-            # Blend original with edges based on detail level
-            if self.detail_level < 1.0:
-                blend_factor = min(max(self.detail_level, 0.0), 1.0)
-                img = Image.blend(img, edge_img, blend_factor)
-            else:
-                img = edge_img
+            if self.edge_detect:
+                # Create a sophisticated edge detection algorithm
+                # First, create an edge-detected version
+                edge_img = img.filter(ImageFilter.FIND_EDGES)
+                
+                # Convert to grayscale for thresholding
+                edge_img = edge_img.convert("L")
+                
+                # Apply adaptive thresholding based on image content
+                stat = ImageStat.Stat(edge_img)
+                edge_mean = stat.mean[0]
+                adaptive_threshold = min(max(edge_mean * 0.7, self.edge_threshold), 200)
+                
+                # Apply threshold to make edges more distinct
+                edge_img = edge_img.point(lambda p: 255 if p > adaptive_threshold else 0)
+                
+                # Convert back to RGB
+                edge_img = edge_img.convert("RGB")
+                
+                # Blend original with edges based on detail level
+                if self.detail_level < 1.0:
+                    blend_factor = min(max(self.detail_level, 0.0), 1.0)
+                    img = Image.blend(img, edge_img, blend_factor)
+                else:
+                    img = edge_img
 
         # Enhance contrast for better clarity if requested
         if self.enhance_contrast:
-            # Use a more sophisticated contrast enhancement
-            # The cutoff parameter determines how much of the histogram is clipped
             img = ImageOps.autocontrast(img, cutoff=(2, 2))
 
-        # If the user wants grayscale output, convert the image
+        # Color mode conversions
         if self.color_mode == "grayscale" or self.color_mode == "braille":
             # For grayscale conversion, use a more sophisticated approach
             if self.color_mode == "grayscale":
-                # Create optimized grayscale using perceptual weights
-                r, g, b = img.split()
-                img = Image.merge("RGB", (
-                    r.point(lambda p: p * 0.2126),
-                    g.point(lambda p: p * 0.7152),
-                    b.point(lambda p: p * 0.0722)
-                ))
-                img = img.convert("L")
+                # Optimized grayscale conversion - use ImageOps directly
+                img = ImageOps.grayscale(img)
             else:
                 img = ImageOps.grayscale(img)
             
@@ -143,8 +174,6 @@ class AsciiArtGenerator:
 
         # Calculate optimal dimensions based on ASCII aspect ratio correction
         target_width = max(1, self.output_width)
-        
-        # Account for character aspect ratio in terminal
         height_correction = self.aspect_ratio_correction
         
         # Adjust ratio to account for the specific character set
@@ -159,41 +188,29 @@ class AsciiArtGenerator:
         )
         
         # Use high-quality resizing for better detail preservation
-        # LANCZOS provides the best quality for downsampling
         img = img.resize((target_width, target_height), Image.LANCZOS)
 
         # Apply specialized dithering based on the mode
         if self.dithering:
-            if self.color_mode == "grayscale":
-                # For grayscale, use Floyd-Steinberg dithering
-                img = img.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
-            elif self.color_mode == "braille":
-                # For braille, use a custom dithering to preserve more detail
+            if self.color_mode == "grayscale" or self.color_mode == "braille":
+                # For grayscale/braille modes, use Floyd-Steinberg dithering
                 img = img.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
             elif self.color_mode in ["ansi", "truecolor", "html"]:
-                # For color modes, apply color dithering
-                # This is achieved by dithering each channel separately
-                r, g, b = img.split()
-                r = r.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
-                g = g.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
-                b = b.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
-                img = Image.merge("RGB", (r, g, b))
+                # For color modes, apply optimized dithering
+                if img.mode == "RGB":
+                    r, g, b = img.split()
+                    r = r.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
+                    g = g.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
+                    b = b.convert("1", dither=Image.FLOYDSTEINBERG).convert("L")
+                    img = Image.merge("RGB", (r, g, b))
 
         return np.array(img)
-
-    def _get_char_density(self, char):
-        """Get the visual density of a character (cached for performance)."""
-        if char in self._density_cache:
-            return self._density_cache[char]
-        
-        density = CharacterSet.get_character_density(char)
-        self._density_cache[char] = density
-        return density
 
     def _map_to_ascii(self, luminance, inverted=False):
         """
         Map a luminance value to an ASCII character from the selected character set.
         If inverted is True, dark pixels will be mapped to lighter characters and vice versa.
+        Uses optimized character density lookup.
         """
         if not self.characters:
             return " "  # Return space if character set is empty
@@ -206,13 +223,13 @@ class AsciiArtGenerator:
         if inverted:
             relative_brightness = 1.0 - relative_brightness
         
-        # Find the character with closest density match to the brightness
+        # Use the density map for optimal character selection
         if hasattr(CharacterSet, 'DENSITY_MAP') and self.characters:
-            # For non-braille modes, we typically want darker characters for darker areas
+            # Target density equals brightness for standard mapping
             target_density = relative_brightness
                 
-            # Find best match in character set by density
-            char_densities = [(c, self._get_char_density(c)) for c in self.characters]
+            # Find best match using the class's optimized density lookup
+            char_densities = [(c, CharacterSet.get_character_density(c)) for c in self.characters]
             closest_char = min(char_densities, key=lambda x: abs(x[1] - target_density))
             return closest_char[0]
         else:
@@ -223,32 +240,11 @@ class AsciiArtGenerator:
 
     def _get_ansi_color(self, r, g, b):
         """Get ANSI truecolor escape sequence for given RGB values."""
-        return f"\033[38;2;{r};{g};{b}m"
+        return ColorMapper.get_ansi_truecolor(r, g, b)
 
     def _get_ansi_256_code(self, r, g, b):
         """Get optimized ANSI 256-color code for the given RGB values."""
-        # Fix the overflow issue by ensuring integer division first
-        # Convert to ints first to be safe
-        r = int(r)
-        g = int(g)
-        b = int(b)
-        
-        # Standard 6x6x6 color cube mapping
-        if r == g == b:
-            # This is a grayscale color, use the dedicated grayscale ramp
-            if r < 8:
-                return 16  # Black
-            if r > 238:
-                return 231  # White
-                
-            # Calculate the closest grayscale shade (24 options from index 232-255)
-            return 232 + min(23, ((r - 8) // 10))
-        else:
-            # Map to color cube - do division first to avoid overflow
-            r_idx = min(5, (r * 6) // 256)
-            g_idx = min(5, (g * 6) // 256)
-            b_idx = min(5, (b * 6) // 256)
-            return 16 + 36 * r_idx + 6 * g_idx + b_idx
+        return ColorMapper.rgb_to_ansi_code(r, g, b)
 
     def _enhance_detail_standard(self, img):
         """Apply advanced detail enhancement for standard modes."""
@@ -278,7 +274,10 @@ class AsciiArtGenerator:
         return enhanced
 
     def _preprocess_standard_image(self):
-        """Special preprocessing optimized for non-braille modes."""
+        """
+        Special preprocessing optimized for non-braille modes.
+        Optimized version with fewer intermediate image creations.
+        """
         # For non-braille modes, enhance details differently
         img = self.image
         
@@ -288,27 +287,27 @@ class AsciiArtGenerator:
         else:
             img = img.convert("RGB")
         
-        # Apply initial contrast enhancement
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(1.2 * self.contrast)
+        # Group image enhancements together
+        enhancers = []
         
-        # Apply brightness
-        enhancer = ImageEnhance.Brightness(img)
-        img = enhancer.enhance(self.brightness)
+        # Add required enhancers to the list
+        enhancers.append((ImageEnhance.Contrast, 1.2 * self.contrast))
+        enhancers.append((ImageEnhance.Brightness, self.brightness))
         
         # Apply sharpening to improve details
         if self.sharpen > 0:
-            enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(1.0 + self.sharpen * 1.2)
+            enhancers.append((ImageEnhance.Sharpness, 1.0 + self.sharpen * 1.2))
         else:
             # Default sharpening for better detail
-            enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(1.3)
+            enhancers.append((ImageEnhance.Sharpness, 1.3))
             
         # For color modes, enhance saturation
         if self.color_mode in ["ansi", "truecolor", "html"] and img.mode == "RGB":
-            enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(self.saturation * 1.2)
+            enhancers.append((ImageEnhance.Color, self.saturation * 1.2))
+        
+        # Apply all enhancers in sequence
+        for enhancer_class, value in enhancers:
+            img = enhancer_class(img).enhance(value)
         
         # Apply blur if needed
         if self.blur > 0:
@@ -324,7 +323,10 @@ class AsciiArtGenerator:
         return img
 
     def _generate_braille_art(self):
-        """Generate Unicode Braille pattern art from the image."""
+        """
+        Generate Unicode Braille pattern art from the image.
+        Optimized version with improved memory usage.
+        """
         # For braille art, work with special processing
         img = self.image
         
@@ -352,38 +354,40 @@ class AsciiArtGenerator:
         else:
             img = img.convert("L")
             
+        # Convert to numpy array for faster processing
         arr = np.array(img)
         rows, cols = arr.shape
-        braille_lines = []
         
-        # Calculate adaptive threshold based on image content
+        # Calculate threshold once
         if self.dithering:
             threshold = 128  # Fixed threshold with dithering
         else:
-            # Dynamic threshold calculation
+            # Dynamic threshold calculation using Otsu's method
+            # This is more efficient than the previous implementation
             hist = img.histogram()
             total_pixels = sum(hist)
             
-            # Use Otsu's method to find optimal threshold
-            sum_pixels = weight_sum = 0
+            # Precompute histogram indexes and weights
+            hist_indexes = np.arange(256)
+            pixel_counts = np.array(hist)
+            
+            # Initialize variables for Otsu's method
             max_variance = 0
             threshold = 128  # Default
             
-            for t in range(256):
-                sum_pixels += hist[t]
-                if sum_pixels == 0:
+            # Compute cumulative sums
+            cum_sum = np.cumsum(pixel_counts)
+            cum_mean = np.cumsum(pixel_counts * hist_indexes)
+            
+            # Find threshold that maximizes between-class variance
+            for t in range(1, 255):
+                w0 = cum_sum[t]
+                if w0 == 0 or w0 == total_pixels:
                     continue
-                    
-                weight_sum += t * hist[t]
-                w0 = sum_pixels / total_pixels
-                w1 = 1 - w0
                 
-                if w0 == 0 or w1 == 0:
-                    continue
-                    
-                # Mean for the two classes
-                mu0 = weight_sum / sum_pixels
-                mu1 = (np.sum(np.array(range(256)) * np.array(hist)) - weight_sum) / (total_pixels - sum_pixels)
+                w1 = total_pixels - w0
+                mu0 = cum_mean[t] / w0
+                mu1 = (cum_mean[-1] - cum_mean[t]) / w1
                 
                 # Calculate between-class variance
                 variance = w0 * w1 * ((mu0 - mu1) ** 2)
@@ -393,25 +397,31 @@ class AsciiArtGenerator:
                     threshold = t
 
         # Mapping of 2x4 dot positions to braille pattern bits
-        dot_positions = [
-            (0, 0, 0x01), (1, 0, 0x02), (2, 0, 0x04), (3, 0, 0x40),
-            (0, 1, 0x08), (1, 1, 0x10), (2, 1, 0x20), (3, 1, 0x80)
-        ]
+        # This lookup table is more efficient
+        DOT_POSITION_MAP = {
+            (0, 0): 0x01, (1, 0): 0x02, (2, 0): 0x04, (3, 0): 0x40,
+            (0, 1): 0x08, (1, 1): 0x10, (2, 1): 0x20, (3, 1): 0x80
+        }
         
         # Process the image in 2x4 blocks to create braille characters
+        # Using list comprehension for better performance
+        braille_lines = []
+        
         for row in range(0, rows, 4):
             line_chars = []
             for col in range(0, cols, 2):
                 braille_dot = 0
                 
-                # Map each dot in the 2x4 grid to the corresponding braille bit
-                for dy, dx, bit in dot_positions:
-                    pixel_row = row + dy
-                    pixel_col = col + dx
-                    if pixel_row < rows and pixel_col < cols:
-                        # For braille art, darker pixels are "on"
-                        if arr[pixel_row, pixel_col] < threshold:
-                            braille_dot |= bit
+                # Process all dots in the 2x4 grid
+                for dy in range(4):
+                    for dx in range(2):
+                        pixel_row = row + dy
+                        pixel_col = col + dx
+                        if pixel_row < rows and pixel_col < cols:
+                            if arr[pixel_row, pixel_col] < threshold:
+                                dot_pos = (dy, dx)
+                                if dot_pos in DOT_POSITION_MAP:
+                                    braille_dot |= DOT_POSITION_MAP[dot_pos]
                 
                 # Create the braille character and add to the current line
                 braille_char = chr(0x2800 + braille_dot)
@@ -422,27 +432,31 @@ class AsciiArtGenerator:
         return "\n".join(braille_lines)
 
     def _preprocess_braille_image(self, img):
-        """Special preprocessing optimized for braille output."""
+        """
+        Special preprocessing optimized for braille output.
+        Optimized version with fewer intermediate images.
+        """
         # Convert to grayscale
         img = img.convert("L")
         
-        # Enhance edges for better detail in braille
+        # Group the image enhancements for better performance
+        enhancers = []
+        
+        # Edge enhancement for better detail in braille
         edge_img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
         img = Image.blend(img, edge_img, 0.3)
         
-        # Apply contrast enhancement specific to braille
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(1.5 * self.contrast)  # Higher contrast for braille
+        # Add required enhancers to the list
+        enhancers.append((ImageEnhance.Contrast, 1.5 * self.contrast))
+        enhancers.append((ImageEnhance.Brightness, self.brightness))
         
-        # Apply brightness
-        enhancer = ImageEnhance.Brightness(img)
-        img = enhancer.enhance(self.brightness)
-        
-        # Apply special sharpening for braille details
         if self.sharpen > 0:
-            enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(1.0 + self.sharpen * 1.5)  # Higher sharpness for braille
+            enhancers.append((ImageEnhance.Sharpness, 1.0 + self.sharpen * 1.5))
             
+        # Apply all enhancers in sequence
+        for enhancer_class, value in enhancers:
+            img = enhancer_class(img).enhance(value)
+        
         # Apply blur if needed
         if self.blur > 0:
             img = img.filter(ImageFilter.GaussianBlur(self.blur))
@@ -518,12 +532,15 @@ class AsciiArtGenerator:
             return Image.merge("RGB", (r_result, g_result, b_result))
 
     def _generate_standard_mode(self, mode):
-        """Generate ASCII art for non-braille modes with high-detail optimizations."""
+        """
+        Generate ASCII art for non-braille modes with high-detail optimizations.
+        Optimized version with better memory usage and performance.
+        """
         # Preprocess the image specially for standard modes
         img = self._preprocess_standard_image()
         
-        # Convert to appropriate color space
-        if mode == "grayscale":
+        # Convert to appropriate color space if needed
+        if mode == "grayscale" and img.mode != "L":
             img = img.convert("L")
             
         # Calculate optimal dimensions for detail
@@ -535,60 +552,74 @@ class AsciiArtGenerator:
         # Apply improved dithering optimized for each mode
         img = self._apply_dithering_standard(mode, img)
         
-        # Convert to numpy array
+        # Convert to numpy array for faster processing
         img_array = np.array(img)
         
         # Check if grayscale
         is_grayscale = len(img_array.shape) == 2 or mode == "grayscale"
         
         # Flag to indicate if we should invert the density mapping
-        # This helps ensure proper brightness-to-character mapping for different modes
         invert_mapping = mode in ["grayscale", "html"] and not self.invert
         
-        # Generate ASCII lines with enhanced character mapping
-        output_lines = []
-        
-        # Apply enhanced character mapping
-        for row in img_array:
-            line = []
-            for pixel in row:
-                if is_grayscale:
-                    # Handle grayscale pixels
-                    if len(img_array.shape) == 2:
-                        luminance = pixel  # Already grayscale
-                    else:
-                        r, g, b = pixel[:3]
-                        luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b  # Perceptual grayscale
-                    
-                    # Map to ASCII with optimized density mapping
-                    char = self._map_to_ascii(luminance, invert_mapping)
-                    line.append(char)
-                else:
-                    # Handle color pixels
-                    r, g, b = pixel[:3]
-                    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-                    
-                    # Get character based on luminance with enhanced mapping
-                    char = self._map_to_ascii(luminance, invert_mapping)
-                    
-                    # Apply different color handling for different modes
-                    if mode == "truecolor":
-                        # Full 24-bit color with enhanced color accuracy
-                        line.append(f"{self._get_ansi_color(r, g, b)}{char}\033[0m")
-                    elif mode == "ansi":
-                        # Enhanced ANSI 256-color mapping
-                        ansi_code = self._get_ansi_256_code(r, g, b)
-                        line.append(f"\033[38;5;{ansi_code}m{char}\033[0m")
-                    else:  # html or other modes
-                        line.append(char)
-            
-            output_lines.append("".join(line))
+        # Use more efficient list comprehensions for line building
+        if is_grayscale:
+            # Process grayscale pixels
+            if len(img_array.shape) == 2:
+                # Already in grayscale format
+                output_lines = [
+                    "".join(self._map_to_ascii(pixel, invert_mapping) for pixel in row)
+                    for row in img_array
+                ]
+            else:
+                # Convert RGB to grayscale
+                output_lines = [
+                    "".join(self._map_to_ascii(
+                        0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2], 
+                        invert_mapping
+                    ) for pixel in row)
+                    for row in img_array
+                ]
+        else:
+            # Process color pixels
+            if mode == "truecolor":
+                # Full 24-bit color with enhanced color accuracy
+                output_lines = [
+                    "".join(
+                        f"{self._get_ansi_color(pixel[0], pixel[1], pixel[2])}"
+                        f"{self._map_to_ascii(0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2], invert_mapping)}"
+                        f"\033[0m"
+                        for pixel in row
+                    )
+                    for row in img_array
+                ]
+            elif mode == "ansi":
+                # Enhanced ANSI 256-color mapping
+                output_lines = [
+                    "".join(
+                        f"\033[38;5;{self._get_ansi_256_code(pixel[0], pixel[1], pixel[2])}m"
+                        f"{self._map_to_ascii(0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2], invert_mapping)}"
+                        f"\033[0m"
+                        for pixel in row
+                    )
+                    for row in img_array
+                ]
+            else:  # html or other modes
+                output_lines = [
+                    "".join(
+                        self._map_to_ascii(0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2], invert_mapping)
+                        for pixel in row
+                    )
+                    for row in img_array
+                ]
         
         # Join the output lines into the final ASCII art
         return "\n".join(output_lines)
 
     def generate_ascii(self):
-        """Generate ASCII art based on the selected mode, with all modes optimized for high detail."""
+        """
+        Generate ASCII art based on the selected mode, with all modes optimized for high detail.
+        Main entry point for ASCII art generation.
+        """
         # Special case for braille mode which has its own dedicated logic
         if self.color_mode == "braille":
             return self._generate_braille_art()

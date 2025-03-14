@@ -135,6 +135,9 @@ class CharacterSet:
         '◊': 0.5, '◆': 0.8,
     }
 
+    # Class-level cache for character densities
+    _density_cache = {}
+
     @classmethod
     def get_preset_names(cls) -> List[str]:
         """Get available preset names."""
@@ -165,9 +168,22 @@ class CharacterSet:
     
     @classmethod
     def get_character_density(cls, char: str) -> float:
-        """Get the approximate visual density of a character (0.0-1.0)."""
-        return cls.DENSITY_MAP.get(char, 0.5)  # Default to 0.5 if not known
+        """
+        Get the approximate visual density of a character (0.0-1.0).
+        Uses an optimized caching mechanism to improve performance.
+        """
+        # Check class-level cache first
+        if char in cls._density_cache:
+            return cls._density_cache[char]
+            
+        # Look up in DENSITY_MAP or use default
+        density = cls.DENSITY_MAP.get(char, 0.5)
         
+        # Store in cache for future lookups
+        cls._density_cache[char] = density
+        
+        return density
+    
     @classmethod
     def sort_by_density(cls, chars: str) -> str:
         """Sort characters by their visual density (dark to light)."""

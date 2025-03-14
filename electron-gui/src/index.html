@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image2TextArt</title>
+    <link rel="stylesheet" href="styles/main.css" />
+    <link rel="stylesheet" href="styles/titlebar.css" />
+    <link rel="stylesheet" href="styles/sidebar.css" />
+    <link rel="stylesheet" href="styles/panels.css" />
+    <link rel="stylesheet" href="styles/controls.css" />
+    <link rel="stylesheet" href="styles/output.css" />
+    <link rel="stylesheet" href="styles/modal.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
+    />
+
+    <!-- ANSI colors for colorized output -->
+    <style id="ansi-colors">
+      :root {
+        /* Basic ANSI colors (0-15) */
+        --ansi-0: #000000; /* Black */
+        --ansi-1: #800000; /* Red */
+        --ansi-2: #008000; /* Green */
+        --ansi-3: #808000; /* Yellow */
+        --ansi-4: #000080; /* Blue */
+        --ansi-5: #800080; /* Magenta */
+        --ansi-6: #008080; /* Cyan */
+        --ansi-7: #c0c0c0; /* White */
+        --ansi-8: #808080; /* Bright Black (Gray) */
+        --ansi-9: #ff0000; /* Bright Red */
+        --ansi-10: #00ff00; /* Bright Green */
+        --ansi-11: #ffff00; /* Bright Yellow */
+        --ansi-12: #0000ff; /* Bright Blue */
+        --ansi-13: #ff00ff; /* Bright Magenta */
+        --ansi-14: #00ffff; /* Bright Cyan */
+        --ansi-15: #ffffff; /* Bright White */
+      }
+    </style>
+  </head>
+  <body class="dark-theme">
+    <!-- Custom title bar -->
+    <div class="title-bar">
+      <div class="title-bar-drag-area">
+        <div class="app-title">
+          <svg class="app-icon" width="20" height="20" viewBox="0 0 512 512">
+            <!-- Background -->
+            <rect
+              width="512"
+              height="512"
+              rx="64"
+              fill="currentColor"
+              opacity="0.2"
+            />
+
+            <!-- Centered ASCII Text Elements -->
+            <g
+              fill="currentColor"
+              font-family="monospace"
+              font-weight="bold"
+              text-anchor="middle"
+            >
+              <text x="256" y="155" font-size="55">@$#</text>
+              <text x="256" y="215" font-size="65">%&</text>
+              <text x="256" y="275" font-size="75">$#*+</text>
+              <text x="256" y="335" font-size="85">@#$%</text>
+              <text x="256" y="395" font-size="65">*&@</text>
+            </g>
+          </svg>
+          <span>Image2TextArt</span>
+        </div>
+      </div>
+      <div class="window-controls">
+        <button id="minimize-btn" class="window-control" title="Minimize">
+          <svg width="12" height="12" viewBox="0 0 12 12">
+            <rect x="2" y="5" width="8" height="2" fill="currentColor" />
+          </svg>
+        </button>
+        <button id="maximize-btn" class="window-control" title="Maximize">
+          <svg width="12" height="12" viewBox="0 0 12 12">
+            <rect
+              x="2"
+              y="2"
+              width="8"
+              height="8"
+              stroke="currentColor"
+              stroke-width="1"
+              fill="none"
+            />
+          </svg>
+        </button>
+        <button id="close-btn" class="window-control close" title="Close">
+          <svg width="12" height="12" viewBox="0 0 12 12">
+            <path
+              d="M3 3L9 9M3 9L9 3"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main content area -->
+    <div class="app-container">
+      <!-- Sidebar navigation -->
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <h1>Image2TextArt</h1>
+        </div>
+
+        <div class="sidebar-section">
+          <button id="select-image-btn" class="primary-btn">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              ></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="12" y1="18" x2="12" y2="12"></line>
+              <line x1="9" y1="15" x2="15" y2="15"></line>
+            </svg>
+            Select Image
+          </button>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-heading">Settings</span>
+          <button
+            id="settings-tab-btn"
+            class="sidebar-btn active"
+            data-tab="settings-panel"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="3"></circle>
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+              ></path>
+            </svg>
+            Basic Settings
+          </button>
+          <button
+            id="advanced-tab-btn"
+            class="sidebar-btn"
+            data-tab="advanced-panel"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 8v8M8 12h8"></path>
+            </svg>
+            Advanced
+          </button>
+          <button
+            id="display-tab-btn"
+            class="sidebar-btn"
+            data-tab="display-panel"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            Display Options
+          </button>
+        </div>
+
+        <div class="sidebar-section">
+          <span class="sidebar-heading">Actions</span>
+          <button id="generate-btn" class="sidebar-btn" disabled>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M12 3v18M3 12h18"></path>
+            </svg>
+            Generate ASCII Art
+          </button>
+          <button id="save-btn" class="sidebar-btn" disabled>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
+              ></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            Save Output
+          </button>
+          <button id="copy-btn" class="sidebar-btn" disabled>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path
+                d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+              ></path>
+            </svg>
+            Copy to Clipboard
+          </button>
+        </div>
+
+        <div class="sidebar-footer">
+          <button id="theme-toggle-btn" class="icon-btn" title="Toggle Theme">
+            <svg
+              id="light-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              style="display: none"
+            >
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg
+              id="dark-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+          <div class="sidebar-version">v2.0.0</div>
+          <a href="#" id="about-link" class="icon-btn" title="About">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </a>
+          <a
+            href="#"
+            id="github-link"
+            class="icon-btn"
+            title="GitHub Repository"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"
+              ></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Main panel container -->
+      <div class="main-panel">
+        <!-- Image preview panel -->
+        <div class="preview-panel">
+          <div class="panel-header">
+            <h2>Image Preview</h2>
+            <div class="file-info" id="image-info">No image selected</div>
+          </div>
+          <div class="preview-container">
+            <div class="empty-state" id="empty-preview">
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              <p>Select an image to convert to ASCII art</p>
+            </div>
+            <img id="preview-image" style="display: none" />
+          </div>
+        </div>
+
+        <!-- Settings panel container -->
+        <div class="settings-container">
+          <!-- Basic settings panel -->
+          <div id="settings-panel" class="settings-panel active">
+            <div class="panel-header">
+              <h2>Basic Settings</h2>
+            </div>
+            <div class="settings-form">
+              <div class="form-group">
+                <label for="width-input">Output Width</label>
+                <div class="input-with-buttons">
+                  <button class="number-btn minus">-</button>
+                  <input
+                    type="number"
+                    id="width-input"
+                    min="20"
+                    max="600"
+                    value="100"
+                  />
+                  <button class="number-btn plus">+</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="color-mode-select">Color Mode</label>
+                <div class="select-wrapper">
+                  <select id="color-mode-select">
+                    <option value="grayscale">Grayscale</option>
+                    <option value="ansi" selected>ANSI 256-color</option>
+                    <option value="truecolor">Truecolor</option>
+                    <option value="html">HTML</option>
+                    <option value="braille">Unicode Braille</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="preset-select">Character Set</label>
+                <div class="select-wrapper">
+                  <select id="preset-select">
+                    <option value="classic" selected>Classic</option>
+                    <option value="dense">Dense</option>
+                    <option value="block">Block</option>
+                    <option value="lineart">Line Art</option>
+                    <option value="unicode">Unicode</option>
+                    <option value="detailed">Detailed</option>
+                    <option value="minimal">Minimal</option>
+                    <option value="dots">Dots</option>
+                    <option value="contrast">High Contrast</option>
+                    <option value="photo">Photo</option>
+                    <option value="ultra">Ultra Detail</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="aspect-ratio-slider">Aspect Ratio</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="aspect-ratio-slider"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value="0.55"
+                  />
+                  <span class="slider-value" id="aspect-ratio-value">0.55</span>
+                </div>
+              </div>
+
+              <div class="checkbox-group">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" id="dithering-checkbox" />
+                  <label for="dithering-checkbox">Enable Dithering</label>
+                </div>
+
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" id="edge-detect-checkbox" />
+                  <label for="edge-detect-checkbox">Edge Detection</label>
+                </div>
+
+                <div class="checkbox-wrapper">
+                  <input
+                    type="checkbox"
+                    id="enhance-contrast-checkbox"
+                    checked
+                  />
+                  <label for="enhance-contrast-checkbox"
+                    >Enhance Contrast</label
+                  >
+                </div>
+
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" id="invert-checkbox" />
+                  <label for="invert-checkbox">Invert Colors</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Advanced settings panel -->
+          <div id="advanced-panel" class="settings-panel">
+            <div class="panel-header">
+              <h2>Advanced Settings</h2>
+            </div>
+            <div class="settings-form">
+              <div class="form-group">
+                <label for="edge-threshold-slider">Edge Threshold</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="edge-threshold-slider"
+                    min="10"
+                    max="200"
+                    step="5"
+                    value="75"
+                  />
+                  <span class="slider-value" id="edge-threshold-value">75</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="blur-slider">Blur Amount</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="blur-slider"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value="0"
+                  />
+                  <span class="slider-value" id="blur-value">0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="sharpen-slider">Sharpen Amount</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="sharpen-slider"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value="0"
+                  />
+                  <span class="slider-value" id="sharpen-value">0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="brightness-slider">Brightness</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="brightness-slider"
+                    min="0.5"
+                    max="2.0"
+                    step="0.05"
+                    value="1.0"
+                  />
+                  <span class="slider-value" id="brightness-value">1.0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="saturation-slider">Saturation</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="saturation-slider"
+                    min="0"
+                    max="2.0"
+                    step="0.05"
+                    value="1.0"
+                  />
+                  <span class="slider-value" id="saturation-value">1.0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="contrast-slider">Contrast</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="contrast-slider"
+                    min="0.5"
+                    max="2.0"
+                    step="0.05"
+                    value="1.0"
+                  />
+                  <span class="slider-value" id="contrast-value">1.0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="detail-level-slider">Detail Level</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="detail-level-slider"
+                    min="0.1"
+                    max="2.0"
+                    step="0.05"
+                    value="1.0"
+                  />
+                  <span class="slider-value" id="detail-level-value">1.0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="gamma-slider">Gamma Correction</label>
+                <div class="slider-container">
+                  <input
+                    type="range"
+                    id="gamma-slider"
+                    min="0.5"
+                    max="2.0"
+                    step="0.05"
+                    value="1.0"
+                  />
+                  <span class="slider-value" id="gamma-value">1.0</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="custom-chars-input">Custom Characters</label>
+                <input
+                  type="text"
+                  id="custom-chars-input"
+                  placeholder="Enter custom characters from light to dark"
+                />
+                <div class="hint">Leave empty to use the selected preset</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Display options panel -->
+          <div id="display-panel" class="settings-panel">
+            <div class="panel-header">
+              <h2>Display Options</h2>
+            </div>
+            <div class="settings-form">
+              <div class="form-group">
+                <label for="font-family-select">Font Family</label>
+                <div class="select-wrapper">
+                  <select id="font-family-select">
+                    <option value="monospace" selected>Monospace</option>
+                    <option value="JetBrains Mono">JetBrains Mono</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Consolas">Consolas</option>
+                    <option value="Lucida Console">Lucida Console</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="font-size-input">Font Size</label>
+                <div class="input-with-buttons">
+                  <button class="number-btn minus">-</button>
+                  <input
+                    type="number"
+                    id="font-size-input"
+                    min="6"
+                    max="24"
+                    value="14"
+                  />
+                  <button class="number-btn plus">+</button>
+                </div>
+              </div>
+
+              <div class="checkbox-group">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" id="auto-fit-checkbox" checked />
+                  <label for="auto-fit-checkbox">Auto-fit to Window</label>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Output Background</label>
+                <div class="color-picker-wrapper">
+                  <input type="color" id="bg-color-picker" value="#000000" />
+                  <span id="bg-color-text">#000000</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Output Text Color</label>
+                <div class="color-picker-wrapper">
+                  <input type="color" id="text-color-picker" value="#ffffff" />
+                  <span id="text-color-text">#ffffff</span>
+                </div>
+                <div class="hint">Only affects grayscale mode</div>
+              </div>
+
+              <div class="form-group">
+                <label>Zoom</label>
+                <div class="button-group">
+                  <button id="zoom-out-btn" class="square-btn">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      <line x1="8" y1="11" x2="14" y2="11"></line>
+                    </svg>
+                  </button>
+                  <button id="zoom-reset-btn" class="square-btn">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      <path d="M11 8v6"></path>
+                    </svg>
+                  </button>
+                  <button id="zoom-in-btn" class="square-btn">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      <line x1="11" y1="8" x2="11" y2="14"></line>
+                      <line x1="8" y1="11" x2="14" y2="11"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Output panel -->
+        <div class="output-panel">
+          <div class="panel-header">
+            <h2>ASCII Output</h2>
+            <div class="status" id="status-message"></div>
+          </div>
+          <div class="output-container">
+            <div class="empty-state" id="empty-output">
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1"
+              >
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+              <p>Generate ASCII art to see the result</p>
+            </div>
+            <pre id="output-area" style="display: none"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- About Modal -->
+    <div id="about-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <img src="../assets/icon.svg" alt="App Icon" width="48" height="48" />
+          <h2>Image2TextArt</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Version 2.0.0</p>
+          <p>Created by renbkna</p>
+          <p>Copyright © 2025 renbkna. All rights reserved.</p>
+          <p>
+            A powerful tool for generating ASCII art from images with multiple
+            rendering modes and advanced customization options.
+          </p>
+          <p class="footer-link">
+            <a href="https://github.com/renbkna/Image2TextArt" target="_blank"
+              >GitHub Repository</a
+            >
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">Processing image...</div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/app.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/settings.js"></script>
+  </body>
+</html>

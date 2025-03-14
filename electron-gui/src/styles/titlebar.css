@@ -1,0 +1,68 @@
+/* Title bar styling */
+
+.title-bar {
+  height: var(--titlebar-height);
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-secondary);
+  -webkit-app-region: drag;
+  user-select: none;
+  border-bottom: 1px solid var(--divider);
+}
+
+.title-bar-drag-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-left: 12px;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.app-icon {
+  margin-right: 8px;
+  color: var(--accent-primary);
+}
+
+.window-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.window-control {
+  height: 100%;
+  width: 46px;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.window-control:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.window-control.close:hover {
+  background-color: #e81123;
+  color: white;
+}
+
+.light-theme .window-control.close:hover {
+  background-color: #e81123;
+  color: white;
+}

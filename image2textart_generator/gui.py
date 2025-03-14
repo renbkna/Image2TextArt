@@ -1,9 +1,17 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox, colorchooser, font
 import re
+import threading
+import time
+import os
 from PIL import ImageTk, Image, ImageOps
 from .core import AsciiArtGenerator
-from .utils import image_to_html
+from .utils import (
+    image_to_html, 
+    handle_large_image, 
+    suggest_optimal_settings,
+    estimate_memory_usage
+)
 from .characters import CharacterSet
 
 # Regular expressions for ANSI truecolor and ANSI 256-color sequences, and the reset code.
@@ -96,6 +104,53 @@ def insert_ansi_text(text_widget, ansi_text):
         pos = next_ansi
 
 
+class LoadingDialog(tk.Toplevel):
+    """Progress dialog for long-running operations."""
+    
+    def __init__(self, parent, title="Processing...", message="Please wait..."):
+        super().__init__(parent)
+        self.title(title)
+        self.resizable(False, False)
+        self.transient(parent)
+        
+        # Remove window decorations
+        self.overrideredirect(True)
+        
+        # Setup UI
+        self.frame = ttk.Frame(self, padding=20)
+        self.frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(self.frame, text=message, font=("TkDefaultFont", 12)).pack(pady=(0, 10))
+        
+        self.progress = ttk.Progressbar(self.frame, mode="indeterminate", length=300)
+        self.progress.pack(pady=10)
+        self.progress.start()
+        
+        self.status_var = tk.StringVar(value="Initializing...")
+        self.status_label = ttk.Label(self.frame, textvariable=self.status_var)
+        self.status_label.pack(pady=5)
+        
+        # Calculate position
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (width // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (height // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Make sure it appears on top
+        self.attributes("-topmost", True)
+        self.focus_set()
+        
+        # Prevent closing
+        self.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+    def update_status(self, message):
+        """Update the status message."""
+        self.status_var.set(message)
+        self.update_idletasks()
+
+
 class AsciiArtGUI:
     def __init__(self, master):
         self.master = master
@@ -103,11 +158,15 @@ class AsciiArtGUI:
         
         # Initialize all variables first
         self.image_path = None
+        self.image_object = None  # Store the PIL Image object
         self.ascii_art = None
         self.bg_color = "#000000"
         self.fg_color = "#FFFFFF"
         self.font_size = 10
         self.auto_fit = tk.BooleanVar(value=True)
+        self.optimize_memory = tk.BooleanVar(value=True)
+        self.processing_thread = None
+        self.settings_cache = {}  # Cache for previous settings
         
         # Create the widgets
         self.create_widgets()
@@ -116,6 +175,9 @@ class AsciiArtGUI:
         # Configure the preview area with default colors
         if self.ascii_preview:
             self.ascii_preview.config(bg=self.bg_color, fg=self.fg_color)
+        
+        # Load previously saved settings, if any
+        self.load_settings()
         
         # Bind window resize event to adjust text when auto-fit is enabled
         self.master.bind("<Configure>", self.on_window_resize)
@@ -238,6 +300,15 @@ class AsciiArtGUI:
             row=row, column=3, padx=2, sticky="w"
         )
         
+        row += 1
+        
+        # Auto-settings button
+        ttk.Button(
+            basic_tab, 
+            text="Recommend Settings", 
+            command=self.suggest_optimal_settings
+        ).grid(row=row, column=0, columnspan=4, padx=2, pady=(10, 0), sticky="ew")
+        
         # Advanced settings content
         row = 0
         
@@ -303,6 +374,14 @@ class AsciiArtGUI:
         ttk.Label(advanced_tab, text="Custom Characters:").grid(row=row, column=0, padx=2, sticky="e")
         self.custom_chars = ttk.Entry(advanced_tab, width=30)
         self.custom_chars.grid(row=row, column=1, columnspan=3, padx=2, sticky="ew")
+        
+        # Memory optimization
+        row += 1
+        ttk.Checkbutton(
+            advanced_tab, 
+            text="Optimize for Large Images", 
+            variable=self.optimize_memory
+        ).grid(row=row, column=0, columnspan=4, padx=2, pady=(5, 0), sticky="w")
         
         # Display settings tab
         row = 0
@@ -375,8 +454,14 @@ class AsciiArtGUI:
         ttk.Button(zoom_frame, text="Zoom In", command=self.zoom_in).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_frame, text="Zoom Out", command=self.zoom_out).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_frame, text="Reset Zoom", command=self.reset_zoom).pack(side=tk.LEFT, padx=2)
+        
+        # Status bar
+        self.status_var = tk.StringVar(value="Ready")
+        status_bar = ttk.Label(self.master, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def load_image(self):
+        """Load an image with optimized memory handling."""
         self.image_path = filedialog.askopenfilename(
             filetypes=[
                 ("Image files", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.webp"),
@@ -385,14 +470,52 @@ class AsciiArtGUI:
         )
         if not self.image_path:
             return
+            
         try:
-            img = Image.open(self.image_path)
-            img.thumbnail((300, 300))
-            photo = ImageTk.PhotoImage(img)
+            # Get image info without loading the entire image
+            with Image.open(self.image_path) as img:
+                width, height = img.size
+                mem_usage = estimate_memory_usage(width, height, img.mode)
+                
+                # Update status with image information
+                self.status_var.set(f"Image: {os.path.basename(self.image_path)} ({width}x{height}, ~{mem_usage:.1f} MB)")
+                
+                # Check if the image is large and needs memory optimization
+                if self.optimize_memory.get() and (width > 3000 or height > 3000 or mem_usage > 50):
+                    self.image_object = handle_large_image(self.image_path, 2000)
+                    # Update status
+                    down_width, down_height = self.image_object.size
+                    self.status_var.set(
+                        f"Image: {os.path.basename(self.image_path)} ({width}x{height}, optimized to {down_width}x{down_height})"
+                    )
+                else:
+                    # Open image normally
+                    self.image_object = Image.open(self.image_path)
+            
+            # Create thumbnail for preview
+            preview_img = self.image_object.copy()
+            preview_img.thumbnail((300, 300))
+            photo = ImageTk.PhotoImage(preview_img)
             self.image_preview.config(image=photo)
             self.image_preview.image = photo  # Keep a reference to avoid garbage collection
+            
+            # Enable generate button
+            for child in self.master.winfo_children():
+                if isinstance(child, ttk.Frame):
+                    for button in child.winfo_children():
+                        if isinstance(button, ttk.Button) and button['text'] == "Generate":
+                            button.config(state="normal")
+                            
+            # Suggest optimal settings if this is a new image
+            if not self.settings_cache.get(self.image_path):
+                if messagebox.askyesno("Optimize Settings", 
+                                     "Would you like to use recommended settings for this image?"):
+                    self.suggest_optimal_settings()
+            
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load image: {str(e)}")
+            self.status_var.set("Error loading image")
+            self.image_object = None
 
     def set_colors(self):
         """Set custom background and foreground colors for the ASCII preview"""
@@ -520,94 +643,74 @@ class AsciiArtGUI:
         except Exception as e:
             print(f"Error in fit_text_to_window: {e}")
 
-    def suggest_optimal_settings(self, image_path):
+    def suggest_optimal_settings(self):
         """Suggest optimal settings based on image characteristics"""
-        try:
-            img = Image.open(image_path)
-            width, height = img.size
-            aspect_ratio = height / width
-            
-            # Calculate optimal width based on image size
-            suggested_width = min(150, max(50, int(width / 10)))
-            self.width.set(suggested_width)
-            
-            # Detect if it's a photo or graphic
-            is_photo = False
-            
-            # Convert to grayscale for analysis
-            img_gray = img.convert('L')
-            
-            # Get histogram
-            hist = img_gray.histogram()
-            
-            # Check for unique colors (approximation using histogram)
-            unique_tones = sum(1 for count in hist if count > 0)
-            if unique_tones > 100:
-                is_photo = True
-            
-            # Suggest character set
-            if is_photo:
-                # Photos work better with more gradients
-                if aspect_ratio > 1.5:  # Tall image
-                    self.preset.set("detailed")
-                    self.aspect_ratio.set(0.5)
-                    self.color_mode.set("braille")
-                elif aspect_ratio < 0.7:  # Wide image
-                    self.preset.set("dense")
-                    self.aspect_ratio.set(0.4)
-                    self.color_mode.set("ansi")
-                else:  # Normal aspect ratio
-                    self.preset.set("dense")
-                    self.aspect_ratio.set(0.55)
-                    self.color_mode.set("braille")
-                    
-                # Enable dithering for photos
-                self.dither.set(True)
-                # Enhance contrast for photos
-                self.enhance.set(True)
-                
-            else:
-                # Graphics/drawings work better with cleaner output
-                if aspect_ratio > 1.5:  # Tall image
-                    self.preset.set("block")
-                    self.aspect_ratio.set(0.6)
-                    self.color_mode.set("grayscale")
-                elif aspect_ratio < 0.7:  # Wide image
-                    self.preset.set("block") 
-                    self.aspect_ratio.set(0.45)
-                    self.color_mode.set("ansi")
-                else:  # Normal aspect ratio
-                    self.preset.set("lineart")
-                    self.aspect_ratio.set(0.55)
-                    self.color_mode.set("grayscale")
-                    
-                # Disable dithering for graphics
-                self.dither.set(False)
-                # Maybe enable edge detection for better graphics
-                self.edges.set(True)
-                
-            return True
-        except Exception as e:
-            print(f"Error suggesting settings: {e}")
-            return False
-
-    def generate_ascii(self):
         if not self.image_path:
             messagebox.showwarning("Warning", "Please load an image first!")
             return
-
+            
         try:
+            # Show loading dialog
+            self.status_var.set("Analyzing image...")
+            self.master.update_idletasks()
+            
+            # Get optimal settings
+            settings = suggest_optimal_settings(self.image_path, int(self.width.get()))
+            
+            # Apply settings to UI controls
+            self.width.set(str(settings['output_width']))
+            self.color_mode.set(settings['color_mode'])
+            self.preset.set(settings['preset'])
+            self.dither.set(settings['dithering'])
+            self.edges.set(settings['edge_detect'])
+            self.enhance.set(settings['enhance_contrast'])
+            self.aspect_ratio.set(str(settings['aspect_ratio_correction']))
+            self.invert.set(settings['invert'])
+            self.edge_threshold.set(settings['edge_threshold'])
+            
+            # Save settings to cache
+            self.settings_cache[self.image_path] = settings
+            
+            # Update status
+            self.status_var.set("Optimized settings applied")
+            
+            # Show success message
+            messagebox.showinfo(
+                "Settings Applied", 
+                "Optimal settings for this image have been applied.\n\n"
+                f"Output Width: {settings['output_width']}\n"
+                f"Color Mode: {settings['color_mode']}\n"
+                f"Character Set: {settings['preset']}\n"
+                f"Dithering: {'Enabled' if settings['dithering'] else 'Disabled'}\n"
+                f"Edge Detection: {'Enabled' if settings['edge_detect'] else 'Disabled'}"
+            )
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to determine optimal settings: {str(e)}")
+            self.status_var.set("Error suggesting settings")
+
+    def generate_ascii_worker(self, dialog):
+        """Worker thread for generating ASCII art"""
+        try:
+            if not self.image_object:
+                raise ValueError("No image loaded")
+                
+            dialog.update_status("Creating generator...")
+            
             # Get custom character set if provided
             custom_chars = self.custom_chars.get().strip()
+            character_set = None
+            if custom_chars:
+                try:
+                    character_set = CharacterSet.create_custom_set(custom_chars)
+                except ValueError as e:
+                    raise ValueError(f"Custom character set error: {str(e)}")
             
-            # Suggest optimal settings for the image
-            if messagebox.askyesno("Optimize Settings", 
-                                  "Would you like to use recommended settings for this image?"):
-                self.suggest_optimal_settings(self.image_path)
-            
+            dialog.update_status("Processing image...")
+                
             # Create the generator with all the options
             generator = AsciiArtGenerator(
-                self.image_path,
+                self.image_object,  # Use the already loaded image object
                 output_width=max(10, int(self.width.get())),
                 color_mode=self.color_mode.get(),
                 dithering=self.dither.get(),
@@ -627,28 +730,109 @@ class AsciiArtGUI:
             )
             
             # If custom characters were provided, use them
-            if custom_chars:
-                try:
-                    generator.characters = CharacterSet.create_custom_set(custom_chars)
-                except ValueError as e:
-                    messagebox.showwarning("Warning", f"Custom character set error: {str(e)}")
+            if character_set:
+                generator.characters = character_set
             
+            dialog.update_status("Generating ASCII art...")
+                
             # Generate the ASCII art
             self.ascii_art = generator.generate_ascii()
             
-            # Display in the preview area
-            if self.color_mode.get() in ("truecolor", "ansi"):
-                insert_ansi_text(self.ascii_preview, self.ascii_art)
-            else:
-                self.ascii_preview.delete(1.0, tk.END)
-                self.ascii_preview.insert(tk.END, self.ascii_art)
+            # Save current settings in cache
+            if self.image_path:
+                self.settings_cache[self.image_path] = {
+                    'output_width': int(self.width.get()),
+                    'color_mode': self.color_mode.get(),
+                    'dithering': self.dither.get(),
+                    'edge_detect': self.edges.get(),
+                    'preset': self.preset.get(),
+                    'enhance_contrast': self.enhance.get(),
+                    'aspect_ratio_correction': float(self.aspect_ratio.get()),
+                    'invert': self.invert.get(),
+                    'edge_threshold': int(self.edge_threshold.get()),
+                    'blur': float(self.blur.get()),
+                    'sharpen': float(self.sharpen.get()),
+                    'brightness': float(self.brightness.get()),
+                    'saturation': float(self.saturation.get()),
+                    'contrast': float(self.contrast.get()),
+                    'detail_level': float(self.detail_level.get()),
+                    'gamma': float(self.gamma.get()),
+                }
+                
+            # Save settings to file
+            self.save_settings()
             
-            # If auto-fit is enabled, adjust text to fit
-            if self.auto_fit.get():
-                self.fit_text_to_window()
+            return True
                 
         except Exception as e:
-            messagebox.showerror("Error", f"Generation failed: {str(e)}")
+            self.error_message = str(e)
+            return False
+
+    def generate_ascii(self):
+        """Generate ASCII art with optimized memory handling and threading"""
+        if not self.image_path:
+            messagebox.showwarning("Warning", "Please load an image first!")
+            return
+            
+        # Disable generate button to prevent multiple generations
+        for child in self.master.winfo_children():
+            if isinstance(child, ttk.Frame):
+                for button in child.winfo_children():
+                    if isinstance(button, ttk.Button) and button['text'] == "Generate":
+                        button.config(state="disabled")
+            
+        # Create loading dialog
+        dialog = LoadingDialog(self.master, "Generating ASCII Art", "Processing image...")
+            
+        # Run generation in a separate thread
+        def thread_func():
+            success = self.generate_ascii_worker(dialog)
+            
+            # Update UI in main thread
+            self.master.after(0, lambda: self.generation_complete(success, dialog))
+            
+        self.processing_thread = threading.Thread(target=thread_func)
+        self.processing_thread.daemon = True
+        self.processing_thread.start()
+
+    def generation_complete(self, success, dialog):
+        """Handle completion of ASCII art generation"""
+        try:
+            # Close dialog
+            dialog.destroy()
+            
+            if not success:
+                messagebox.showerror("Error", f"Generation failed: {self.error_message}")
+                self.status_var.set("Generation failed")
+            else:
+                # Display in the preview area
+                if self.color_mode.get() in ("truecolor", "ansi"):
+                    insert_ansi_text(self.ascii_preview, self.ascii_art)
+                else:
+                    self.ascii_preview.delete(1.0, tk.END)
+                    self.ascii_preview.insert(tk.END, self.ascii_art)
+                
+                # If auto-fit is enabled, adjust text to fit
+                if self.auto_fit.get():
+                    self.fit_text_to_window()
+                    
+                # Enable save button
+                for child in self.master.winfo_children():
+                    if isinstance(child, ttk.Frame):
+                        for button in child.winfo_children():
+                            if isinstance(button, ttk.Button) and button['text'] == "Save":
+                                button.config(state="normal")
+                                
+                # Update status
+                self.status_var.set("ASCII art generated successfully")
+                
+        finally:
+            # Re-enable generate button
+            for child in self.master.winfo_children():
+                if isinstance(child, ttk.Frame):
+                    for button in child.winfo_children():
+                        if isinstance(button, ttk.Button) and button['text'] == "Generate":
+                            button.config(state="normal")
 
     def save_output(self):
         """Save the generated ASCII art to a file"""
@@ -691,9 +875,149 @@ class AsciiArtGUI:
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(self.ascii_art)
                     
+            self.status_var.set(f"Saved to {os.path.basename(file_path)}")
             messagebox.showinfo("Success", f"Saved to {file_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save: {str(e)}")
+            self.status_var.set("Error saving file")
+            
+    def save_settings(self):
+        """Save current settings to a settings file."""
+        try:
+            import json
+            settings = {
+                "font_size": self.font_size,
+                "font_family": self.font_family.get(),
+                "auto_fit": self.auto_fit.get(),
+                "optimize_memory": self.optimize_memory.get(),
+                "bg_color": self.bg_color,
+                "fg_color": self.fg_color,
+                "width": self.width.get(),
+                "color_mode": self.color_mode.get(),
+                "preset": self.preset.get(),
+                "aspect_ratio": self.aspect_ratio.get(),
+                "dither": self.dither.get(),
+                "edges": self.edges.get(),
+                "enhance": self.enhance.get(),
+                "invert": self.invert.get(),
+                "edge_threshold": self.edge_threshold.get(),
+                "blur": self.blur.get(),
+                "sharpen": self.sharpen.get(),
+                "brightness": self.brightness.get(),
+                "saturation": self.saturation.get(),
+                "contrast": self.contrast.get(),
+                "detail_level": self.detail_level.get(),
+                "gamma": self.gamma.get(),
+            }
+            
+            # Get settings directory
+            settings_dir = os.path.join(os.path.expanduser("~"), ".image2textart")
+            if not os.path.exists(settings_dir):
+                os.makedirs(settings_dir)
+                
+            # Save to file
+            settings_file = os.path.join(settings_dir, "settings.json")
+            with open(settings_file, "w") as f:
+                json.dump(settings, f)
+        except Exception as e:
+            # Silently fail - settings saving is not critical
+            print(f"Error saving settings: {e}")
+            
+    def load_settings(self):
+        """Load settings from a file."""
+        try:
+            import json
+            
+            # Get settings file
+            settings_file = os.path.join(
+                os.path.expanduser("~"), 
+                ".image2textart", 
+                "settings.json"
+            )
+            
+            if not os.path.exists(settings_file):
+                return
+                
+            # Load settings
+            with open(settings_file, "r") as f:
+                settings = json.load(f)
+                
+            # Apply settings
+            if "font_size" in settings:
+                self.font_size = settings["font_size"]
+                self.font_size_slider.set(self.font_size)
+                
+            if "font_family" in settings:
+                self.font_family.set(settings["font_family"])
+                
+            if "auto_fit" in settings:
+                self.auto_fit.set(settings["auto_fit"])
+                
+            if "optimize_memory" in settings:
+                self.optimize_memory.set(settings["optimize_memory"])
+                
+            if "bg_color" in settings:
+                self.bg_color = settings["bg_color"]
+                self.ascii_preview.config(bg=self.bg_color)
+                
+            if "fg_color" in settings:
+                self.fg_color = settings["fg_color"]
+                self.ascii_preview.config(fg=self.fg_color)
+                
+            if "width" in settings:
+                self.width.set(settings["width"])
+                
+            if "color_mode" in settings:
+                self.color_mode.set(settings["color_mode"])
+                
+            if "preset" in settings:
+                self.preset.set(settings["preset"])
+                
+            if "aspect_ratio" in settings:
+                self.aspect_ratio.set(settings["aspect_ratio"])
+                
+            if "dither" in settings:
+                self.dither.set(settings["dither"])
+                
+            if "edges" in settings:
+                self.edges.set(settings["edges"])
+                
+            if "enhance" in settings:
+                self.enhance.set(settings["enhance"])
+                
+            if "invert" in settings:
+                self.invert.set(settings["invert"])
+                
+            if "edge_threshold" in settings:
+                self.edge_threshold.set(settings["edge_threshold"])
+                
+            if "blur" in settings:
+                self.blur.set(settings["blur"])
+                
+            if "sharpen" in settings:
+                self.sharpen.set(settings["sharpen"])
+                
+            if "brightness" in settings:
+                self.brightness.set(settings["brightness"])
+                
+            if "saturation" in settings:
+                self.saturation.set(settings["saturation"])
+                
+            if "contrast" in settings:
+                self.contrast.set(settings["contrast"])
+                
+            if "detail_level" in settings:
+                self.detail_level.set(settings["detail_level"])
+                
+            if "gamma" in settings:
+                self.gamma.set(settings["gamma"])
+                
+            # Update font
+            self.update_font_size()
+            
+        except Exception as e:
+            # Silently fail - settings loading is not critical
+            print(f"Error loading settings: {e}")
 
 
 def run_gui():

@@ -1,0 +1,55 @@
+{
+  "name": "image2textart",
+  "version": "1.0.0",
+  "description": "Image2TextArt - Advanced ASCII art generator with multiple color modes",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "package": "electron-builder --win"
+  },
+  "author": {
+    "name": "renbkna"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "python-shell": "^5.0.0",
+    "ansi-to-html": "^0.7.2"
+  },
+  "build": {
+    "appId": "com.renbkna.Image2TextArt",
+    "productName": "Image2TextArt",
+    "copyright": "Copyright © 2025 renbkna",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "publisherName": "renbkna"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "shortcutName": "${productName}",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    },
+    "files": [
+      "**/*",
+      "!**/.git/*",
+      "!**/.venv/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../image2textart_generator",
+        "to": "image2textart_generator"
+      }
+    ]
+  }
+}

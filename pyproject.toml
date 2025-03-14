@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Image2TextArt"
+version = "1.0.0"
+description = "A powerful ASCII art generator with multiple modes and advanced features"
+authors = [
+    {name = "renbkna"}
+]
+readme = "readme.md"
+requires-python = ">=3.7"
+dependencies = [
+    "Pillow>=11.1.0",
+    "numpy>=2.2.3",
+    "colorama>=0.4.6",
+]
+
+[project.scripts]
+Image2TextArt = "image2textart_generator.cli:main"
+Image2TextArt-gui = "image2textart_generator.gui:run_gui"
+
+[tool.setuptools]
+packages = ["image2textart_generator"]
